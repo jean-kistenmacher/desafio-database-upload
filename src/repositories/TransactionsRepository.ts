@@ -1,5 +1,4 @@
-import { EntityRepository, Repository } from 'typeorm';
-
+import { EntityRepository, Repository, getCustomRepository } from 'typeorm';
 import Transaction from '../models/Transaction';
 
 interface Balance {
@@ -8,38 +7,53 @@ interface Balance {
   total: number;
 }
 
+interface CategoryDTO {
+  id: string;
+  title: string;
+}
+
+interface CreateTransactionDTO {
+  id: string;
+  title: string;
+  value: number;
+  type: 'income' | 'outcome';
+  category: CategoryDTO;
+}
+
 @EntityRepository(Transaction)
 class TransactionsRepository extends Repository<Transaction> {
   public async getBalance(): Promise<Balance> {
-    const transactions = await this.find();
+    const transactionsRepository = getCustomRepository(TransactionsRepository);
+    const transactions = await transactionsRepository.find();
+    const income = transactions.reduce((total, transaction) => {
+      if (transaction.type === 'income') {
+        return total + Number(transaction.value);
+      }
+      return total;
+    }, 0);
 
-    const { income, outcome } = transactions.reduce(
-      (accumulator, transaction) => {
-        switch (transaction.type) {
-          case 'income':
-            accumulator.income += Number(transaction.value);
-            break;
+    const outcome = transactions.reduce((total, transaction) => {
+      if (transaction.type === 'outcome') {
+        return total + Number(transaction.value);
+      }
+      return total;
+    }, 0);
+    const balance = {
+      income,
+      outcome,
+      total: income - outcome,
+    };
 
-          case 'outcome':
-            accumulator.outcome += Number(transaction.value);
-            break;
+    return balance;
+  }
 
-          default:
-            break;
-        }
-
-        return accumulator;
-      },
-      {
-        income: 0,
-        outcome: 0,
-        total: 0,
-      },
-    );
-
-    const total = income - outcome;
-
-    return { income, outcome, total };
+  public async getTransactions(): Promise<CreateTransactionDTO[]> {
+    const transactionsRepository = getCustomRepository(TransactionsRepository);
+    const transactions = transactionsRepository.find({
+      select: ['id', 'title', 'value', 'type'],
+      relations: ['category'],
+    });
+    return transactions;
   }
 }
 
